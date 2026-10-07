@@ -1,0 +1,13 @@
+Archivos_Entrada/
+.venv/
+.vscode/
+.github/
+tests/
+__pycache__/
+*.pyc
+.env
+.env.*
+.streamlit/secrets.toml
+*.xlsx
+*.xls
+*.csv

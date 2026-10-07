@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+Archivos_Entrada/
+geografias.xlsx
+geografias.csv
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+.vscode/
+*.log
+*.xlsx
+*.xls
+*.csv
