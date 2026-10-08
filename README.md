@@ -26,14 +26,14 @@ Las hojas iniciales de los archivos actuales son `Exportar Hoja de Trabajo` en E
 
 ## Reglas de Geografias
 
-- La base es Licencias: se mantiene una fila por cada fila leida, en el mismo orden, incluidos usuarios repetidos. No se filtra por estado ni por tipo de licencia.
+- La base es Licencias: se mantiene una sola fila por login normalizado. Si un usuario tiene varias licencias, se prioriza Asignada frente a cualquier otro estado, sin distinguir mayusculas ni espacios exteriores. Si hay varias asignadas o ninguna asignada, se conserva la primera de las candidatas. Las filas seleccionadas mantienen su orden original. No se filtra por tipo de licencia.
 - El mail se convierte en login tomando la parte anterior a `@` y anadiendo `_indra`. Se normalizan espacios exteriores y mayusculas tanto en mail como en login.
 - El cruce es exacto tras normalizar: no se corrigen erratas ni se hacen coincidencias aproximadas. `edomigo_indra` y `edomingo_indra` son usuarios distintos.
 - La geografia procede de Empleados. Un login no encontrado conserva su login y deja la geografia vacia.
 - Un mail vacio o invalido conserva la fila con ambas columnas vacias y genera un aviso.
 - Los duplicados de Empleados no multiplican el resultado. Si un login tiene una unica geografia no vacia, se utiliza esa. Si tiene varias geografias distintas y figura en Licencias, se deja su geografia vacia y se muestra un aviso. No se elige arbitrariamente una geografia.
 - El resultado tiene exactamente las columnas `login` y `geografia` (esta ultima se muestra y exporta con tilde).
-- La tabla en pantalla muestra tambien `estado de licencia`, tomado de la columna Estado de Licencias y conservando su orden. Esta columna es solo visual: Excel y CSV exportan unicamente login y geografia.
+- La tabla en pantalla muestra tambien `estado de licencia`, tomado de la fila seleccionada de Licencias. Esta columna es solo visual: Excel y CSV exportan unicamente login y geografia, tambien sin usuarios repetidos.
 - Cambiar los archivos, hojas o columnas del cruce invalida el resultado anterior. Responsables y CSV no son necesarios para Procesar Geografias.
 
 Los botones exportan la tabla completa, independientemente de los filtros de pantalla. Excel incluye filtros y cabecera fija. CSV utiliza separador `;` y UTF-8 con BOM para Excel en espanol. Las exportaciones protegen contra formulas procedentes de valores de entrada; el CSV antepone una comilla simple a valores que podrian interpretarse como formulas.
@@ -56,9 +56,9 @@ Hay busqueda por login, nombre, mail o proyecto y un filtro de filas sin datos d
 
 ## Maestro
 
-Debajo del resultado de Responsables, Filtrar excel para maestro genera una segunda tabla desde el resultado completo, sin aplicar los filtros visuales de busqueda. Retira las licencias Cancelada (sin distinguir mayusculas ni espacios exteriores), conserva el orden y duplicados y muestra solo login, id_empleado, tipo de licencia, proyecto, mail, Mail Responsable Vertical, Mail Responsable Horizontal y Excluido.
+Debajo del resultado de Responsables, Filtrar excel para maestro genera una segunda tabla desde el resultado completo, sin aplicar los filtros visuales de busqueda. Retira las licencias Cancelada (sin distinguir mayusculas ni espacios exteriores), conserva el orden y duplicados y muestra solo login, id_empleado, tipo de licencia, proyecto, mail, Mail Responsable Vertical, Mail Responsable Horizontal, Excluido y Repetidos. Repetidos vale 1 en todas las filas de un login repetido dentro del maestro y 0 en las demas; ignora mayusculas y espacios exteriores y no marca logins vacios.
 
-Excluido es un entero: 1 para Github (solo repositorios) y 0 para el resto. Las filas con 1 se muestran en rojo y permanecen en el maestro. Exportar Excel maestro descarga la tabla con esos valores numericos; el color se aplica en pantalla. Reprocesar Responsables o cambiar los archivos u hojas invalida el maestro anterior.
+Excluido es un entero: 1 para Github (solo repositorios) y 0 para el resto. Las filas con 1 se muestran en rojo y permanecen en el maestro. Exportar Excel maestro descarga todas las filas con esos valores numericos, pero omite id_empleado, tipo de licencia y Repetidos; el color se aplica en pantalla. Reprocesar Responsables o cambiar los archivos u hojas invalida el maestro anterior.
 
 ## Checkeo Correos a Enviar
 

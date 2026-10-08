@@ -143,8 +143,11 @@ with geography_tab:
             with st.spinner("Procesando geograf\u00edas..."):
                 employee_frame = employees["data"][[selected_login, selected_geography]].copy()
                 employee_frame.columns = ["login", "geografia"]
+                status_columns = [column for column in licenses["data"].columns if normalize_header(column) in ("estado", "estado de licencia")]
                 license_frame = licenses["data"][[selected_mail]].copy()
                 license_frame.columns = ["mail"]
+                if len(status_columns) == 1:
+                    license_frame["estado de licencia"] = licenses["data"][status_columns[0]]
                 st.session_state.geography_result = process_geographies(employee_frame, license_frame)
                 st.session_state.result_signature = signature
         except DataValidationError as error:
@@ -173,11 +176,9 @@ with geography_tab:
         search = search_area.text_input("Buscar login", placeholder="Login", key="search")
         geography_filter = filter_area.selectbox("Geograf\u00eda", ["Todas", "Sin geograf\u00eda"] + sorted(result.table.loc[result.table["geograf\u00eda"].ne(""), "geograf\u00eda"].unique().tolist()))
         view = result.table.copy()
+        view["estado de licencia"] = result.license_status
         status_columns = [column for column in licenses["data"].columns if normalize_header(column) in ("estado", "estado de licencia")]
-        if len(status_columns) == 1:
-            view["estado de licencia"] = licenses["data"][status_columns[0]].fillna("").to_numpy()
-        else:
-            view["estado de licencia"] = ""
+        if len(status_columns) != 1:
             st.warning("No se ha encontrado una unica columna de estado de licencia en Licencias.")
         if search:
             view = view.loc[view["login"].str.contains(search.strip().casefold(), regex=False, na=False)]
@@ -271,7 +272,8 @@ with responsible_tab:
                 axis=1,
             )
             st.dataframe(styled_master, hide_index=True, width="stretch", height=440)
-            st.download_button("Exportar Excel maestro", export_excel(master_table, sheet_name="Maestro"), "maestro.xlsx",
+            master_export = master_table.drop(columns=["id_empleado", "tipo de licencia", "Repetidos"])
+            st.download_button("Exportar Excel maestro", export_excel(master_export, sheet_name="Maestro"), "maestro.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="export_master_excel", icon=":material/download:")
             st.divider()
             if activity is None:

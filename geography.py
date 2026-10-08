@@ -29,6 +29,7 @@ class GeographyResult:
     invalid_emails: int
     missing_geography: int
     conflicting_logins: int
+    license_status: pd.Series
 
 
 def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> GeographyResult:
@@ -38,9 +39,19 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
     if employees.empty or licenses.empty:
         raise DataValidationError("Empleados y Licencias deben contener al menos una fila.")
 
+    licenses = licenses.reset_index(drop=True)
     emails = licenses[mail_column].astype("string").fillna("").str.strip().str.casefold()
     valid_emails = emails.str.fullmatch(r"[^\s@]+@[^\s@]+", na=False)
     logins = (emails.str.split("@", n=1).str[0] + "_indra").where(valid_emails, "")
+    status_columns = [column for column in licenses.columns if normalize_header(column) in ("estado", "estado de licencia")]
+    license_status = (licenses[status_columns[0]].astype("string").fillna("").str.strip()
+                      if len(status_columns) == 1 else pd.Series("", index=licenses.index, dtype="string"))
+    candidates = pd.DataFrame({"login": logins, "assigned": license_status.str.casefold().eq("asignada")})
+    selected = candidates.loc[valid_emails].sort_values("assigned", ascending=False, kind="stable").drop_duplicates("login").index
+    selected = selected.union(licenses.index[~valid_emails]).sort_values()
+    logins = logins.loc[selected].reset_index(drop=True)
+    valid_emails = valid_emails.loc[selected].reset_index(drop=True)
+    license_status = license_status.loc[selected].reset_index(drop=True)
     employee_logins = employees[login_column].astype("string").fillna("").str.strip().str.casefold()
     geographies = employees[geography_column].astype("string").fillna("").str.strip()
     lookup = pd.DataFrame({"login": employee_logins, "geograf\u00eda": geographies})
@@ -60,6 +71,7 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
         invalid_emails=int((~valid_emails).sum()),
         missing_geography=int((matched & ~logins.isin(conflict_logins) & table["geograf\u00eda"].set_axis(logins.index).eq("")).sum()),
         conflicting_logins=len(conflict_logins),
+        license_status=license_status,
     )
 
 

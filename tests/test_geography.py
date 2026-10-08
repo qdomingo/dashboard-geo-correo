@@ -11,13 +11,25 @@ class GeographyTests(unittest.TestCase):
     def setUp(self):
         self.employees = pd.DataFrame({"LOGIN": ["edomingo_indra", "otro_indra"], "GEOGRAFIA": ["Espa\u00f1a", "Italia"]})
 
-    def test_left_join_preserves_licenses_and_only_two_columns(self):
+    def test_left_join_deduplicates_users_and_only_two_columns(self):
         licenses = pd.DataFrame({"Mail": ["edomingo@minsait.com", "ausente@indra.es", "edomingo@indra.es"]})
         result = process_geographies(self.employees, licenses)
         self.assertEqual(result.table.columns.tolist(), ["login", "geograf\u00eda"])
-        self.assertEqual(result.table["login"].tolist(), ["edomingo_indra", "ausente_indra", "edomingo_indra"])
-        self.assertEqual(result.table["geograf\u00eda"].tolist(), ["Espa\u00f1a", "", "Espa\u00f1a"])
-        self.assertEqual((result.matched, result.unmatched), (2, 1))
+        self.assertEqual(result.table["login"].tolist(), ["edomingo_indra", "ausente_indra"])
+        self.assertEqual(result.table["geograf\u00eda"].tolist(), ["Espa\u00f1a", ""])
+        self.assertEqual((result.matched, result.unmatched), (1, 1))
+
+    def test_assigned_license_wins_in_both_orders_and_repeated_states(self):
+        for states in (["Cancelada", " ASIGNADA ", "Asignada"], ["Asignada", "Cancelada", "Asignada"], ["Cancelada"] * 3):
+            with self.subTest(states=states):
+                licenses = pd.DataFrame({
+                    "Mail": [" EDOMINGO@MINSAIT.COM ", "edomingo@indra.es", "edomingo@minsait.com"],
+                    " Estado de licencia ": states,
+                }, index=[7, 7, 9])
+                result = process_geographies(self.employees, licenses)
+                self.assertEqual(result.table["login"].tolist(), ["edomingo_indra"])
+                self.assertEqual(result.license_status.str.casefold().tolist(), ["asignada" if "Asignada" in states else "cancelada"])
+                self.assertEqual(result.matched, 1)
 
     def test_case_spaces_and_accented_headers(self):
         employees = pd.DataFrame({" Login ": [" EDOMINGO_INDRA "], "Geograf\u00eda": [" Espa\u00f1a "]})

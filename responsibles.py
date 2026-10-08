@@ -22,7 +22,7 @@ RESPONSIBLE_FIELDS = {
     "Mail Responsable Horizontal": "mailresphorizontal",
 }
 RESULT_COLUMNS = ["login", "id_empleado", *LICENSE_FIELDS, *RESPONSIBLE_FIELDS]
-MASTER_COLUMNS = ["login", "id_empleado", "tipo de licencia", "proyecto", "mail", "Mail Responsable Vertical", "Mail Responsable Horizontal", "Excluido"]
+MASTER_COLUMNS = ["login", "id_empleado", "tipo de licencia", "proyecto", "mail", "Mail Responsable Vertical", "Mail Responsable Horizontal", "Excluido", "Repetidos"]
 
 
 def filter_master(table: pd.DataFrame) -> pd.DataFrame:
@@ -30,6 +30,8 @@ def filter_master(table: pd.DataFrame) -> pd.DataFrame:
     master = table.loc[~canceled, ["login", "id_empleado", "tipo de licencia", "Proyecto", "mail", "Mail Responsable Vertical", "Mail Responsable Horizontal"]].copy()
     master.rename(columns={"Proyecto": "proyecto"}, inplace=True)
     master["Excluido"] = master["tipo de licencia"].astype("string").fillna("").str.strip().str.casefold().eq("github (solo repositorios)").astype(int)
+    logins = master["login"].astype("string").fillna("").str.strip().str.casefold()
+    master["Repetidos"] = (logins.ne("") & logins.duplicated(keep=False)).astype(int)
     return master.reset_index(drop=True)
 
 

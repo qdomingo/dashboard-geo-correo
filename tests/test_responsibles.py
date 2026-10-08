@@ -95,6 +95,16 @@ class ResponsibleTests(unittest.TestCase):
         self.assertTrue(master.empty)
         self.assertEqual(master.columns.tolist(), MASTER_COLUMNS)
 
+    def test_master_marks_all_repeated_users_after_removing_canceled(self):
+        table = pd.concat([process_responsibles(self.licenses, self.responsible).table] * 4, ignore_index=True)
+        table["login"] = ["ed_indra", " ED_INDRA ", "otro_indra", "otro_indra", "unico_indra", "", "", None]
+        table["estado de licencia"] = ["Asignada", "Asignada", "Asignada", "Cancelada", "Asignada", "Asignada", "Asignada", "Asignada"]
+        original = table.copy(deep=True)
+        master = filter_master(table)
+        self.assertEqual(master["Repetidos"].tolist(), [1, 1, 0, 0, 0, 0, 0])
+        self.assertEqual(len(master), 7)
+        pd.testing.assert_frame_equal(table, original)
+
 
 if __name__ == "__main__":
     unittest.main()
