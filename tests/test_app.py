@@ -20,7 +20,13 @@ class GeographyDisplayTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             input_folder = Path(folder)
             pd.DataFrame({"LOGIN": ["usuario_indra"], "GEOGRAFIA": ["Italia"]}).to_excel(input_folder / "Empleados.xlsx", index=False)
-            pd.DataFrame({"Mail": ["usuario@example.com", "usuario@example.com", "otro@example.com"], "Estado": ["Cancelada", "Asignada", "Pendiente"]}).to_excel(input_folder / "Licencias.xlsx", index=False)
+            licenses = pd.DataFrame(
+                [["a", "Cancelada", "b", "c", "d", "e", "f", "g", "h", "111", "usuario@example.com"],
+                 ["a", "Asignada", "b", "c", "d", "e", "f", "g", "h", "222", "usuario@example.com"],
+                 ["a", "Pendiente", "b", "c", "d", "e", "f", "g", "h", "333", "otro@example.com"]],
+                columns=["x", "Estado", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "", "Mail"],
+            )
+            licenses.to_excel(input_folder / "Licencias.xlsx", index=False)
             source = (ROOT / "app.py").read_text(encoding="utf-8").replace(
                 'INPUT_FOLDER = ROOT / "Archivos_Entrada"', f"INPUT_FOLDER = Path({folder!r})"
             )
@@ -29,14 +35,16 @@ class GeographyDisplayTests(unittest.TestCase):
                 app.button(key="process_geographies").click().run()
                 self.assertEqual(len(app.exception), 0)
                 view = app.dataframe[0].value
-                self.assertEqual(view.columns.tolist(), ["login", "geograf\u00eda", "estado de licencia"])
+                self.assertEqual(view.columns.tolist(), ["id_empleado", "login", "geograf\u00eda", "estado de licencia"])
                 self.assertEqual(view["estado de licencia"].tolist(), ["Asignada", "Pendiente"])
                 self.assertEqual(view["login"].tolist(), ["usuario_indra", "otro_indra"])
+                self.assertEqual(view["id_empleado"].tolist(), ["222", "333"])
                 excel_table = excel_export.call_args.args[0]
                 csv_table = csv_export.call_args.args[0]
                 for restored in (pd.read_excel(BytesIO(export_excel(excel_table))), pd.read_csv(BytesIO(export_csv(csv_table)), sep=";")):
-                    self.assertEqual(restored.columns.tolist(), ["login", "geograf\u00eda"])
+                    self.assertEqual(restored.columns.tolist(), ["id_empleado", "login", "geograf\u00eda"])
                     self.assertEqual(restored["login"].tolist(), ["usuario_indra", "otro_indra"])
+                    self.assertEqual(restored["id_empleado"].astype(str).tolist(), ["222", "333"])
                 app.text_input(key="search").set_value("usuario").run()
                 self.assertEqual(app.dataframe[0].value["estado de licencia"].tolist(), ["Asignada"])
 

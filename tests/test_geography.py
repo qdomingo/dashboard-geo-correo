@@ -11,10 +11,10 @@ class GeographyTests(unittest.TestCase):
     def setUp(self):
         self.employees = pd.DataFrame({"LOGIN": ["edomingo_indra", "otro_indra"], "GEOGRAFIA": ["Espa\u00f1a", "Italia"]})
 
-    def test_left_join_deduplicates_users_and_only_two_columns(self):
+    def test_left_join_deduplicates_users_and_only_three_columns(self):
         licenses = pd.DataFrame({"Mail": ["edomingo@minsait.com", "ausente@indra.es", "edomingo@indra.es"]})
         result = process_geographies(self.employees, licenses)
-        self.assertEqual(result.table.columns.tolist(), ["login", "geograf\u00eda"])
+        self.assertEqual(result.table.columns.tolist(), ["id_empleado", "login", "geograf\u00eda"])
         self.assertEqual(result.table["login"].tolist(), ["edomingo_indra", "ausente_indra"])
         self.assertEqual(result.table["geograf\u00eda"].tolist(), ["Espa\u00f1a", ""])
         self.assertEqual((result.matched, result.unmatched), (1, 1))
@@ -34,7 +34,7 @@ class GeographyTests(unittest.TestCase):
     def test_case_spaces_and_accented_headers(self):
         employees = pd.DataFrame({" Login ": [" EDOMINGO_INDRA "], "Geograf\u00eda": [" Espa\u00f1a "]})
         result = process_geographies(employees, pd.DataFrame({" MAIL ": [" EDOMINGO@MINSAIT.COM "]}))
-        self.assertEqual(result.table.iloc[0].tolist(), ["edomingo_indra", "Espa\u00f1a"])
+        self.assertEqual(result.table.iloc[0].tolist(), ["", "edomingo_indra", "Espa\u00f1a"])
 
     def test_missing_or_invalid_mail_preserves_blank_rows(self):
         licenses = pd.DataFrame({"Mail": [None, "", "sin-arroba", "@dominio", "a@", "a@@b", "a b@c"]})

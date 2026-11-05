@@ -148,6 +148,8 @@ with geography_tab:
                 license_frame.columns = ["mail"]
                 if len(status_columns) == 1:
                     license_frame["estado de licencia"] = licenses["data"][status_columns[0]]
+                if len(licenses["data"].columns) >= 10:
+                    license_frame["id_empleado"] = licenses["data"].iloc[:, 9]
                 st.session_state.geography_result = process_geographies(employee_frame, license_frame)
                 st.session_state.result_signature = signature
         except DataValidationError as error:
@@ -189,9 +191,9 @@ with geography_tab:
         st.caption(f"{len(view):,} de {len(result.table):,} filas")
         st.dataframe(view, hide_index=True, width="stretch", height=440)
         excel_area, csv_area, _ = st.columns([1, 1, 2])
-        excel_area.download_button("Exportar Excel", export_excel(result.table), "geografias.xlsx",
+        excel_area.download_button("Exportar Excel", export_excel(result.table), "maestro_usuarios_geo.xlsx",
                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", icon=":material/download:", width="stretch")
-        csv_area.download_button("Exportar CSV", export_csv(result.table), "geografias.csv", "text/csv", icon=":material/download:", width="stretch")
+        csv_area.download_button("Exportar CSV", export_csv(result.table), "maestro_usuarios_geo.csv", "text/csv", icon=":material/download:", width="stretch")
         st.caption(f"Exportaci\u00f3n completa: {len(result.table):,} filas")
 
 with responsible_tab:
@@ -273,7 +275,7 @@ with responsible_tab:
             )
             st.dataframe(styled_master, hide_index=True, width="stretch", height=440)
             master_export = master_table.drop(columns=["id_empleado", "tipo de licencia", "Repetidos"])
-            st.download_button("Exportar Excel maestro", export_excel(master_export, sheet_name="Maestro"), "maestro.xlsx",
+            st.download_button("Exportar Excel maestro", export_excel(master_export, sheet_name="Maestro"), "maestro_usuarios_mail.xlsx",
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="export_master_excel", icon=":material/download:")
             st.divider()
             if activity is None:

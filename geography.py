@@ -30,6 +30,7 @@ class GeographyResult:
     missing_geography: int
     conflicting_logins: int
     license_status: pd.Series
+    employee_id: pd.Series
 
 
 def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> GeographyResult:
@@ -46,12 +47,18 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
     status_columns = [column for column in licenses.columns if normalize_header(column) in ("estado", "estado de licencia")]
     license_status = (licenses[status_columns[0]].astype("string").fillna("").str.strip()
                       if len(status_columns) == 1 else pd.Series("", index=licenses.index, dtype="string"))
+    id_columns = [column for column in licenses.columns if normalize_header(column) == "id_empleado"]
+    employee_id = (licenses[id_columns[0]].astype("string").fillna("").str.strip()
+                   if len(id_columns) == 1 else pd.Series("", index=licenses.index, dtype="string"))
+
     candidates = pd.DataFrame({"login": logins, "assigned": license_status.str.casefold().eq("asignada")})
     selected = candidates.loc[valid_emails].sort_values("assigned", ascending=False, kind="stable").drop_duplicates("login").index
     selected = selected.union(licenses.index[~valid_emails]).sort_values()
     logins = logins.loc[selected].reset_index(drop=True)
     valid_emails = valid_emails.loc[selected].reset_index(drop=True)
     license_status = license_status.loc[selected].reset_index(drop=True)
+    employee_id = employee_id.loc[selected].reset_index(drop=True)
+    
     employee_logins = employees[login_column].astype("string").fillna("").str.strip().str.casefold()
     geographies = employees[geography_column].astype("string").fillna("").str.strip()
     lookup = pd.DataFrame({"login": employee_logins, "geograf\u00eda": geographies})
@@ -63,7 +70,7 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
     lookup.loc[lookup["login"].isin(conflict_logins), "geograf\u00eda"] = ""
     mapping = lookup.set_index("login")["geograf\u00eda"]
     matched = logins.ne("") & logins.isin(mapping.index)
-    table = pd.DataFrame({"login": logins, "geograf\u00eda": logins.map(mapping).fillna("")}).reset_index(drop=True)
+    table = pd.DataFrame({"id_empleado": employee_id, "login": logins, "geograf\u00eda": logins.map(mapping).fillna("")}).reset_index(drop=True)
     return GeographyResult(
         table=table,
         matched=int(matched.sum()),
@@ -72,6 +79,7 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
         missing_geography=int((matched & ~logins.isin(conflict_logins) & table["geograf\u00eda"].set_axis(logins.index).eq("")).sum()),
         conflicting_logins=len(conflict_logins),
         license_status=license_status,
+        employee_id=employee_id,
     )
 
 
