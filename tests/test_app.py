@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class GeographyDisplayTests(unittest.TestCase):
-    def test_status_is_display_only_and_assigned_users_are_deduplicated(self):
+    def test_status_is_exported_and_assigned_users_are_deduplicated(self):
         with TemporaryDirectory() as folder:
             input_folder = Path(folder)
             pd.DataFrame({"LOGIN": ["usuario_indra"], "GEOGRAFIA": ["Italia"]}).to_excel(input_folder / "Empleados.xlsx", index=False)
@@ -35,14 +35,18 @@ class GeographyDisplayTests(unittest.TestCase):
                 app.button(key="process_geographies").click().run()
                 self.assertEqual(len(app.exception), 0)
                 view = app.dataframe[0].value
-                self.assertEqual(view.columns.tolist(), ["id_empleado", "login", "geograf\u00eda", "estado de licencia"])
+                self.assertEqual(view.columns.tolist(), ["id_empleado", "login", "geograf\u00eda", "Organizaci\u00f3n", "duplicados", "estado de licencia"])
+                self.assertEqual(view["duplicados"].tolist(), ["", ""])
                 self.assertEqual(view["estado de licencia"].tolist(), ["Asignada", "Pendiente"])
                 self.assertEqual(view["login"].tolist(), ["usuario_indra", "otro_indra"])
                 self.assertEqual(view["id_empleado"].tolist(), ["222", "333"])
                 excel_table = excel_export.call_args.args[0]
                 csv_table = csv_export.call_args.args[0]
-                for restored in (pd.read_excel(BytesIO(export_excel(excel_table))), pd.read_csv(BytesIO(export_csv(csv_table)), sep=";")):
-                    self.assertEqual(restored.columns.tolist(), ["id_empleado", "login", "geograf\u00eda"])
+                for restored in (pd.read_excel(BytesIO(export_excel(excel_table)), keep_default_na=False),
+                                 pd.read_csv(BytesIO(export_csv(csv_table)), sep=";", keep_default_na=False)):
+                    self.assertEqual(restored.columns.tolist(), view.columns.tolist())
+                    self.assertEqual(restored["duplicados"].tolist(), ["", ""])
+                    self.assertEqual(restored["estado de licencia"].tolist(), ["Asignada", "Pendiente"])
                     self.assertEqual(restored["login"].tolist(), ["usuario_indra", "otro_indra"])
                     self.assertEqual(restored["id_empleado"].astype(str).tolist(), ["222", "333"])
                 app.text_input(key="search").set_value("usuario").run()
@@ -79,6 +83,53 @@ class MasterDisplayTests(unittest.TestCase):
                 self.assertEqual(restored["Excluido"].tolist(), [0, 1, 0])
 
 
+class InducedLicensesInputTests(unittest.TestCase):
+    def test_induced_licenses_are_loaded_and_available_in_source_preview(self):
+        with TemporaryDirectory() as folder:
+            input_folder = Path(folder)
+            induced = pd.DataFrame({"Licencia": ["Copilot"], "País": ["España"], "Correo": ["usuario@example.com"]})
+            induced.to_excel(input_folder / "Licencias Inducidas.xlsx", index=False)
+            source = (ROOT / "app.py").read_text(encoding="utf-8").replace(
+                'INPUT_FOLDER = ROOT / "Archivos_Entrada"', f"INPUT_FOLDER = Path({folder!r})"
+            )
+
+            app = AppTest.from_string(source, default_timeout=30).run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertEqual(app.session_state["use_local_files"], True)
+            self.assertIn("Licencias Inducidas", app.selectbox(key="source_preview").options)
+            app.selectbox(key="source_preview").set_value("Licencias Inducidas").run()
+
+            self.assertEqual(len(app.exception), 0)
+            preview = app.dataframe[2].value
+            self.assertEqual(preview.columns.tolist(), induced.columns.tolist())
+            self.assertEqual(preview.iloc[0].tolist(), induced.iloc[0].tolist())
+
+    def test_geography_uses_induced_sheet_and_invalidates_on_sheet_change(self):
+        with TemporaryDirectory() as folder:
+            input_folder = Path(folder)
+            pd.DataFrame({"CDEMPLEA": ["01"], "LOGIN": ["empleado_indra"], "GEOGRAFIA": ["Italia"]}).to_excel(input_folder / "Empleados.xlsx", index=False)
+            pd.DataFrame({"Mail": ["base@example.com"], "Estado": ["Asignada"]}).to_excel(input_folder / "Licencias.xlsx", index=False)
+            induced = pd.DataFrame({"ID": ["01"], "Estado": ["Asignada"], "C\u00f3d. Proyecto": ["ATMPRO"], "Cliente": ["CAIXABANK"]})
+            with pd.ExcelWriter(input_folder / "Licencias Inducidas.xlsx") as writer:
+                induced.to_excel(writer, sheet_name="Caixa", index=False)
+                induced.assign(Cliente="Otro").to_excel(writer, sheet_name="ATM", index=False)
+            source = (ROOT / "app.py").read_text(encoding="utf-8").replace(
+                'INPUT_FOLDER = ROOT / "Archivos_Entrada"', f"INPUT_FOLDER = Path({folder!r})"
+            )
+            app = AppTest.from_string(source, default_timeout=30).run()
+            app.button(key="process_geographies").click().run()
+            self.assertFalse(app.exception)
+            self.assertFalse(app.error)
+            self.assertEqual(app.dataframe[0].value.iloc[1].tolist(), ["01", "empleado_indra", "Italia", "CAIXABANK", "", "Asignada"])
+
+            sheet_picker = next(box for box in app.selectbox if box.options == ["Caixa", "ATM"])
+            sheet_picker.set_value("ATM").run()
+            self.assertNotIn("geography_result", app.session_state)
+            app.button(key="process_geographies").click().run()
+            self.assertFalse(app.error)
+            self.assertEqual(app.dataframe[0].value["Organizaci\u00f3n"].tolist(), ["MINSAIT", "ATM"])
+
+
 @unittest.skipUnless((ROOT / "Archivos_Entrada" / "Empleados.xlsx").exists() and (ROOT / "Archivos_Entrada" / "Licencias.xlsx").exists(), "Requiere Excel locales")
 class AppTests(unittest.TestCase):
     def test_process_filter_and_invalidate_with_real_files(self):
@@ -92,9 +143,9 @@ class AppTests(unittest.TestCase):
         result = app.session_state["geography_result"]
         self.assertFalse(result.table.loc[result.table["login"].ne(""), "login"].duplicated().any())
         self.assertGreater(len(result.table), 0)
-        self.assertEqual(result.table.columns.tolist(), ["login", "geograf\u00eda"])
+        self.assertEqual(result.table.columns.tolist(), ["id_empleado", "login", "geograf\u00eda", "Organizaci\u00f3n", "duplicados", "estado de licencia"])
         geography_view = app.dataframe[0].value
-        self.assertEqual(geography_view.columns.tolist(), ["login", "geograf\u00eda", "estado de licencia"])
+        self.assertEqual(geography_view.columns.tolist(), ["id_empleado", "login", "geograf\u00eda", "Organizaci\u00f3n", "duplicados", "estado de licencia"])
         licenses_source = pd.read_excel(ROOT / "Archivos_Entrada" / "Licencias.xlsx", sheet_name="O-Licencias", dtype=str, keep_default_na=False)
         source_logins = licenses_source["Mail"].str.strip().str.casefold().str.split("@", n=1).str[0] + "_indra"
         assigned_logins = source_logins.loc[licenses_source["Estado"].str.strip().str.casefold().eq("asignada")]

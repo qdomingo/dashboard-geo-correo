@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from access import require_access
-from geography import DataValidationError, export_csv, export_excel, normalize_header, process_geographies
+from geography import GEOGRAPHY_COLUMNS, DataValidationError, export_csv, export_excel, find_column, normalize_header, process_geographies
 from sql_generation import EMPLOYEES_SQL, generate_responsible_sql
 from responsibles import RESULT_COLUMNS, filter_master, process_responsibles
 from email_check import check_emails
@@ -109,6 +109,7 @@ with st.sidebar:
     use_local = st.toggle("Usar archivos de Archivos_Entrada", value=INPUT_FOLDER.is_dir(), key="use_local_files")
     employees = load_source("employees", "Empleados", INPUT_FOLDER / "Empleados.xlsx", use_local)
     licenses = load_source("licenses", "Licencias", INPUT_FOLDER / "Licencias.xlsx", use_local)
+    induced_licenses = load_source("induced_licenses", "Licencias Inducidas", INPUT_FOLDER / "Licencias Inducidas.xlsx", use_local)
     responsible = load_source("responsible", "Responsables", INPUT_FOLDER / "Responsables.xlsx", use_local)
     st.divider()
     csv_paths = sorted(INPUT_FOLDER.glob("*.csv")) if INPUT_FOLDER.exists() else []
@@ -134,7 +135,7 @@ with geography_tab:
                 selected_mail = column_picker("Mail de Licencias", licenses["data"], "mail", "mail_" + licenses["signature"])
         ready = all(column is not None for column in (selected_login, selected_geography, selected_mail))
     signature = (employees["signature"] if employees else None, licenses["signature"] if licenses else None,
-                 selected_login, selected_geography, selected_mail)
+                 induced_licenses["signature"] if induced_licenses else None, selected_login, selected_geography, selected_mail)
     if st.session_state.get("result_signature") != signature:
         st.session_state.pop("geography_result", None)
     if st.button("Procesar Geograf\u00edas", icon=":material/sync:", type="primary", key="process_geographies", disabled=not ready):
@@ -150,7 +151,10 @@ with geography_tab:
                     license_frame["estado de licencia"] = licenses["data"][status_columns[0]]
                 if len(licenses["data"].columns) >= 10:
                     license_frame["id_empleado"] = licenses["data"].iloc[:, 9]
-                st.session_state.geography_result = process_geographies(employee_frame, license_frame)
+                induced_frame = induced_licenses["data"] if induced_licenses else None
+                if induced_frame is not None:
+                    employee_frame["CDEMPLEA"] = employees["data"][find_column(employees["data"], "CDEMPLEA")]
+                st.session_state.geography_result = process_geographies(employee_frame, license_frame, induced_frame)
                 st.session_state.result_signature = signature
         except DataValidationError as error:
             st.error(str(error))
@@ -161,24 +165,25 @@ with geography_tab:
             st.info("Pendiente de Empleados y Licencias con columnas de login, geograf\u00eda y mail.", icon=":material/info:")
         else:
             st.caption("Resultado pendiente")
-        st.dataframe(pd.DataFrame(columns=["login", "geograf\u00eda", "estado de licencia"]), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(columns=GEOGRAPHY_COLUMNS), hide_index=True, width="stretch")
     else:
         total_area, matched_area, blank_area = st.columns(3)
-        total_area.metric("Filas de Licencias", f"{len(result.table):,}")
+        total_area.metric("Filas del resultado", f"{len(result.table):,}")
         matched_area.metric("Coincidencias en Empleados", f"{result.matched:,}")
         blank_area.metric("Sin geograf\u00eda", f"{result.table['geograf\u00eda'].eq('').sum():,}")
         if result.invalid_emails:
             st.warning(f"{result.invalid_emails:,} filas con mail vacio o invalido: login y geograf\u00eda vacios.")
         if result.conflicting_logins:
             st.warning(f"{result.conflicting_logins:,} logins con geograf\u00edas contradictorias en Empleados: geograf\u00eda vacia en el resultado.")
+        if result.unresolved_induced:
+            st.warning(f"{result.unresolved_induced:,} filas de Licencias Inducidas omitidas: el ID no identifica un login unico en Empleados.")
         if result.unmatched or result.missing_geography:
             st.caption(f"No encontrados en Empleados: {result.unmatched:,} | Empleados sin geograf\u00eda: {result.missing_geography:,}")
         st.divider()
         search_area, filter_area = st.columns([2, 1])
         search = search_area.text_input("Buscar login", placeholder="Login", key="search")
         geography_filter = filter_area.selectbox("Geograf\u00eda", ["Todas", "Sin geograf\u00eda"] + sorted(result.table.loc[result.table["geograf\u00eda"].ne(""), "geograf\u00eda"].unique().tolist()))
-        view = result.table.copy()
-        view["estado de licencia"] = result.license_status
+        view = result.table
         status_columns = [column for column in licenses["data"].columns if normalize_header(column) in ("estado", "estado de licencia")]
         if len(status_columns) != 1:
             st.warning("No se ha encontrado una unica columna de estado de licencia en Licencias.")
@@ -313,9 +318,12 @@ with responsible_tab:
 
 
 with sources_tab:
-    sources = {label: source for label, source in [("Empleados", employees), ("Licencias", licenses), ("Responsables", responsible), ("Actividad CSV", activity)] if source is not None}
+    sources = {label: source for label, source in [
+        ("Empleados", employees), ("Licencias", licenses), ("Licencias Inducidas", induced_licenses),
+        ("Responsables", responsible), ("Actividad CSV", activity),
+    ] if source is not None}
     if sources:
-        selection = st.selectbox("Origen", list(sources))
+        selection = st.selectbox("Origen", list(sources), key="source_preview")
         source = sources[selection]
         st.caption(f"{source['name']} | {source['sheet']} | {len(source['data']):,} filas | {len(source['data'].columns)} columnas")
         st.dataframe(source["data"].head(200), hide_index=True, width="stretch", height=440)

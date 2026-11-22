@@ -20,9 +20,9 @@ Consulta [DEPLOYMENT.md](DEPLOYMENT.md) para publicar el codigo en GitHub y cone
 
 ## Archivos
 
-Hay tres apartados de Excel (Empleados, Licencias y Responsables) y uno de CSV. Por defecto se usan los archivos presentes en `Archivos_Entrada`. Un archivo subido tiene prioridad sobre el de la carpeta. Para trabajar exclusivamente con subidas, desactivar el interruptor de archivos locales. Es posible elegir hojas y configurar las tres columnas del cruce si sus nombres cambian.
+Hay cuatro apartados de Excel (Empleados, Licencias, Licencias Inducidas y Responsables) y uno de CSV. Por defecto se usan los archivos presentes en `Archivos_Entrada`. Un archivo subido tiene prioridad sobre el de la carpeta. Para trabajar exclusivamente con subidas, desactivar el interruptor de archivos locales. Es posible elegir hojas y configurar las tres columnas del cruce si sus nombres cambian.
 
-Las hojas iniciales de los archivos actuales son `Exportar Hoja de Trabajo` en Empleados y `O-Licencias` en Licencias. Se detectan `LOGIN`, `GEOGRAFIA` y `Mail` sin distinguir mayusculas, acentos o espacios exteriores.
+Las hojas iniciales de los archivos actuales son `Exportar Hoja de Trabajo` en Empleados y `O-Licencias` en Licencias. El bloque Licencias Inducidas acepta otro Excel independiente; tambien puede cargarse desde `Archivos_Entrada/Licencias Inducidas.xlsx`. Su hoja seleccionada aparece en la vista previa de Datos de entrada y se usa solo en Geografias. Se detectan `LOGIN`, `GEOGRAFIA` y `Mail` sin distinguir mayusculas, acentos o espacios exteriores.
 
 ## Reglas de Geografias
 
@@ -32,8 +32,9 @@ Las hojas iniciales de los archivos actuales son `Exportar Hoja de Trabajo` en E
 - La geografia procede de Empleados. Un login no encontrado conserva su login y deja la geografia vacia.
 - Un mail vacio o invalido conserva la fila con ambas columnas vacias y genera un aviso.
 - Los duplicados de Empleados no multiplican el resultado. Si un login tiene una unica geografia no vacia, se utiliza esa. Si tiene varias geografias distintas y figura en Licencias, se deja su geografia vacia y se muestra un aviso. No se elige arbitrariamente una geografia.
-- El resultado tiene exactamente las columnas `login` y `geografia` (esta ultima se muestra y exporta con tilde).
-- La tabla en pantalla muestra tambien `estado de licencia`, tomado de la fila seleccionada de Licencias. Esta columna es solo visual: Excel y CSV exportan unicamente login y geografia, tambien sin usuarios repetidos.
+- Las filas de Licencias se etiquetan como MINSAIT. Si se carga Licencias Inducidas, se incorporan las filas con estado Asignada y `Cód. Proyecto` igual a `ATMPRO` (ATM) o `Cliente` igual a `CAIXABANK` (CAIXABANK), sin distinguir mayusculas ni espacios exteriores. Se cruza `ID` de Inducidas con `CDEMPLEA` de Empleados para obtener el login. Si el ID no identifica un login unico, se omite la fila y se avisa.
+- Si un login aparece en varias organizaciones, se conserva una sola fila con esta prioridad: MINSAIT, CAIXABANK, ATM. Si la licencia seleccionada de MINSAIT esta Cancelada, se prioriza CAIXABANK y despues ATM. Si no hay una inducida elegible, se conserva la fila de MINSAIT.
+- La tabla y las exportaciones Excel y CSV incluyen `id_empleado`, `login`, `geografía`, `Organización`, `duplicados` y `estado de licencia`. El estado corresponde a la fila seleccionada de Licencias o Inducidas. Para `duplicados` solo cuentan las candidatas con estado Asignada antes de aplicar la prioridad. Si un login tiene dos o mas, la columna muestra sus organizaciones sin repetirlas, por ejemplo `duplicado(MINSAIT-ATM)` o `duplicado(MINSAIT)`. Si tiene menos de dos, queda vacia.
 - Cambiar los archivos, hojas o columnas del cruce invalida el resultado anterior. Responsables y CSV no son necesarios para Procesar Geografias.
 
 Los botones exportan la tabla completa, independientemente de los filtros de pantalla. Excel incluye filtros y cabecera fija. CSV utiliza separador `;` y UTF-8 con BOM para Excel en espanol. Las exportaciones protegen contra formulas procedentes de valores de entrada; el CSV antepone una comilla simple a valores que podrian interpretarse como formulas.

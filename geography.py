@@ -5,6 +5,10 @@ import unicodedata
 import pandas as pd
 
 
+GEOGRAPHY_COLUMNS = ["id_empleado", "login", "geograf\u00eda", "Organizaci\u00f3n", "duplicados", "estado de licencia"]
+ORGANIZATION_ORDER = ("MINSAIT", "CAIXABANK", "ATM")
+
+
 class DataValidationError(ValueError):
     pass
 
@@ -31,9 +35,36 @@ class GeographyResult:
     conflicting_logins: int
     license_status: pd.Series
     employee_id: pd.Series
+    unresolved_induced: int
 
 
-def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> GeographyResult:
+def _induced_candidates(employees: pd.DataFrame, employee_logins: pd.Series, induced: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    induced = induced.reset_index(drop=True)
+    employee_ids = employees[find_column(employees, "CDEMPLEA")].astype("string").fillna("").str.strip()
+    ids = induced[find_column(induced, "ID")].astype("string").fillna("").str.strip()
+    states = induced[find_column(induced, "Estado")].astype("string").fillna("").str.strip()
+    projects = induced[find_column(induced, "C\u00f3d. Proyecto")].astype("string").str.strip().str.casefold()
+    clients = induced[find_column(induced, "Cliente")].astype("string").str.strip().str.casefold()
+    atm = projects.eq("atmpro").fillna(False)
+    caixabank = clients.eq("caixabank").fillna(False)
+    eligible = states.str.casefold().eq("asignada") & (caixabank | atm)
+
+    lookup = pd.DataFrame({"id_empleado": employee_ids, "login": employee_logins})
+    lookup = lookup.loc[lookup["id_empleado"].ne("") & lookup["login"].ne("")].drop_duplicates()
+    login_by_id = lookup.drop_duplicates("id_empleado", keep=False).set_index("id_empleado")["login"]
+    logins = ids.loc[eligible].map(login_by_id)
+    candidates = pd.DataFrame({
+        "id_empleado": ids.loc[eligible],
+        "login": logins,
+        "Organizaci\u00f3n": caixabank.loc[eligible].map({True: "CAIXABANK", False: "ATM"}),
+        "estado de licencia": states.loc[eligible],
+    })
+    return candidates.loc[logins.notna()], int(logins.isna().sum())
+
+
+def process_geographies(
+    employees: pd.DataFrame, licenses: pd.DataFrame, induced: pd.DataFrame | None = None,
+) -> GeographyResult:
     login_column = find_column(employees, "login")
     geography_column = find_column(employees, "geografia")
     mail_column = find_column(licenses, "mail")
@@ -52,14 +83,35 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
                    if len(id_columns) == 1 else pd.Series("", index=licenses.index, dtype="string"))
 
     candidates = pd.DataFrame({"login": logins, "assigned": license_status.str.casefold().eq("asignada")})
+    organizations = pd.DataFrame({"login": logins.loc[valid_emails & candidates["assigned"]], "Organizaci\u00f3n": "MINSAIT"})
     selected = candidates.loc[valid_emails].sort_values("assigned", ascending=False, kind="stable").drop_duplicates("login").index
     selected = selected.union(licenses.index[~valid_emails]).sort_values()
-    logins = logins.loc[selected].reset_index(drop=True)
-    valid_emails = valid_emails.loc[selected].reset_index(drop=True)
-    license_status = license_status.loc[selected].reset_index(drop=True)
-    employee_id = employee_id.loc[selected].reset_index(drop=True)
-    
+
+    rows = pd.DataFrame({
+        "id_empleado": employee_id.loc[selected],
+        "login": logins.loc[selected],
+        "Organizaci\u00f3n": "MINSAIT",
+        "estado de licencia": license_status.loc[selected],
+    }).reset_index(drop=True)
     employee_logins = employees[login_column].astype("string").fillna("").str.strip().str.casefold()
+    unresolved_induced = 0
+    if induced is not None:
+        added, unresolved_induced = _induced_candidates(employees, employee_logins, induced)
+        organizations = pd.concat([organizations, added[["login", "Organizaci\u00f3n"]]], ignore_index=True)
+        cancelled = rows["estado de licencia"].str.casefold().eq("cancelada")
+        added = added.loc[~added["login"].isin(rows.loc[~cancelled, "login"])]
+        caixabank = added["Organizaci\u00f3n"].eq("CAIXABANK")
+        preferred = pd.concat([added.loc[caixabank], added.loc[~caixabank]]).drop_duplicates("login").sort_index()
+        if not preferred.empty:
+            replaced = cancelled & rows["login"].isin(preferred["login"])
+            rows = pd.concat([rows.loc[~replaced], preferred], ignore_index=True)
+
+    logins = rows["login"]
+    repeated = organizations.loc[organizations["login"].duplicated(keep=False)]
+    duplicate_labels = repeated.groupby("login")["Organizaci\u00f3n"].agg(
+        lambda values: "duplicado(" + "-".join(sorted(set(values), key=ORGANIZATION_ORDER.index)) + ")"
+    )
+    rows["duplicados"] = logins.map(duplicate_labels).fillna("")
     geographies = employees[geography_column].astype("string").fillna("").str.strip()
     lookup = pd.DataFrame({"login": employee_logins, "geograf\u00eda": geographies})
     lookup = lookup.loc[lookup["login"].ne("") & lookup["login"].isin(logins)]
@@ -70,16 +122,18 @@ def process_geographies(employees: pd.DataFrame, licenses: pd.DataFrame) -> Geog
     lookup.loc[lookup["login"].isin(conflict_logins), "geograf\u00eda"] = ""
     mapping = lookup.set_index("login")["geograf\u00eda"]
     matched = logins.ne("") & logins.isin(mapping.index)
-    table = pd.DataFrame({"id_empleado": employee_id, "login": logins, "geograf\u00eda": logins.map(mapping).fillna("")}).reset_index(drop=True)
+    rows["geograf\u00eda"] = logins.map(mapping).fillna("")
+    table = rows[GEOGRAPHY_COLUMNS]
     return GeographyResult(
         table=table,
         matched=int(matched.sum()),
-        unmatched=int((valid_emails & ~matched).sum()),
-        invalid_emails=int((~valid_emails).sum()),
-        missing_geography=int((matched & ~logins.isin(conflict_logins) & table["geograf\u00eda"].set_axis(logins.index).eq("")).sum()),
+        unmatched=int((logins.ne("") & ~matched).sum()),
+        invalid_emails=int(logins.eq("").sum()),
+        missing_geography=int((matched & ~logins.isin(conflict_logins) & table["geograf\u00eda"].eq("")).sum()),
         conflicting_logins=len(conflict_logins),
-        license_status=license_status,
-        employee_id=employee_id,
+        license_status=rows["estado de licencia"],
+        employee_id=rows["id_empleado"],
+        unresolved_induced=unresolved_induced,
     )
 
 
